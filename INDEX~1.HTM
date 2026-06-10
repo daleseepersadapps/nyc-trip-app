@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>LOS SANTOS NYC · FIFA 2026</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.cdnfonts.com/css/pricedown" rel="stylesheet">
+<style>
+  :root{
+    --display:'Pricedown','Anton',Impact,sans-serif;
+    --hud:'Oswald','Segoe UI',sans-serif;
+    --gold:#F5C518; --ink:#0b0e13; --red:#FF453A; --green:#34C759;
+    --panel:rgba(12,15,20,0.86); --panel2:rgba(15,19,26,0.97);
+    --stroke:rgba(255,255,255,0.14); --txt:#f3f5f8; --sub:#9aa6b4;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; overflow:hidden; background:var(--ink); color:var(--txt); font-family:var(--hud); }
+  #map{ position:fixed; inset:0; z-index:1; background:var(--ink); }
+  .leaflet-container{ background:var(--ink); font-family:var(--hud); }
+
+  .vignette{ position:fixed; inset:0; z-index:400; pointer-events:none;
+    background:radial-gradient(125% 95% at 50% 40%, transparent 58%, rgba(0,0,0,.5) 100%); }
+  .scan{ position:fixed; inset:0; z-index:401; pointer-events:none; opacity:.04; mix-blend-mode:overlay;
+    background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px); }
+
+  /* ---------- day-switch wipe ---------- */
+  .wipe{ position:fixed; inset:0; z-index:3000; pointer-events:none; visibility:hidden;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; }
+  .wband{ position:absolute; inset:-12% -30%; transform:translateX(-135%) skewX(-9deg);
+    background:linear-gradient(100deg, var(--wc,#F5C518) 0 55%, #0b0e13 55%); box-shadow:0 0 80px rgba(0,0,0,.8); }
+  .wipe.run{ visibility:visible; }
+  .wipe.run .wband{ animation:wipeX .95s cubic-bezier(.72,0,.2,1) both; }
+  @keyframes wipeX{ 0%{transform:translateX(-135%) skewX(-9deg)} 42%{transform:translateX(0) skewX(-9deg)}
+    58%{transform:translateX(0) skewX(-9deg)} 100%{transform:translateX(135%) skewX(-9deg)} }
+  .wipe .wtext{ position:relative; font-family:var(--display); font-size:clamp(54px,15vw,96px); line-height:.9;
+    color:#fff; text-shadow:0 4px 0 rgba(0,0,0,.45); opacity:0; }
+  .wipe .wsub{ position:relative; font-weight:700; font-size:13px; letter-spacing:5px; color:var(--ink);
+    background:#fff; padding:3px 14px; border-radius:3px; margin-top:10px; opacity:0; }
+  .wipe.run .wtext{ animation:wt .95s ease both; }
+  .wipe.run .wsub{ animation:wt .95s ease .05s both; }
+  @keyframes wt{ 0%,22%{opacity:0; transform:translateY(14px) scale(.92)} 40%,62%{opacity:1; transform:none}
+    82%,100%{opacity:0; transform:translateY(-10px)} }
+
+  /* ---------- HUD ---------- */
+  .hud{ position:fixed; top:calc(env(safe-area-inset-top,0px) + 10px); left:12px; z-index:1000;
+    background:var(--panel); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--stroke); border-left:4px solid var(--gold); border-radius:8px;
+    padding:8px 14px 10px; box-shadow:0 8px 24px rgba(0,0,0,.5); max-width:66vw; }
+  .hud .kbar{ display:flex; align-items:center; gap:10px; font-weight:700; font-size:10.5px; letter-spacing:2px; color:var(--gold); text-transform:uppercase; }
+  .hud .kbar .prog{ color:var(--sub); letter-spacing:1px; }
+  .hud .title{ font-family:var(--display); font-size:30px; line-height:.92; letter-spacing:1px; margin:2px 0 2px; color:#fff; text-shadow:0 2px 0 rgba(0,0,0,.5); }
+  .hud .sum{ font-size:12px; color:var(--sub); }
+
+  .ctl{ position:fixed; top:calc(env(safe-area-inset-top,0px) + 10px); right:12px; z-index:1000;
+    display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+  .clockpill{ font-weight:700; font-size:13px; letter-spacing:1px; color:var(--gold); background:var(--panel);
+    border:1px solid var(--stroke); border-radius:6px; padding:6px 11px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    box-shadow:0 6px 18px rgba(0,0,0,.45); font-variant-numeric:tabular-nums; }
+  .gbtn{ font-family:var(--hud); font-weight:700; background:var(--panel); border:1px solid var(--stroke); color:var(--txt);
+    border-radius:6px; cursor:pointer; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    box-shadow:0 6px 18px rgba(0,0,0,.45); transition:transform .12s; }
+  .gbtn:active{ transform:scale(.94); }
+  .locate{ width:44px; height:44px; font-size:17px; display:flex; align-items:center; justify-content:center; }
+
+  .keybanner{ position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 178px); left:50%; transform:translateX(-50%);
+    z-index:900; font-size:11px; color:#ffe9a8; background:rgba(70,55,10,.75); border:1px solid rgba(245,197,24,.4);
+    padding:6px 12px; border-radius:14px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); max-width:90vw; text-align:center; }
+
+  /* ---------- blips ---------- */
+  .blip{ position:relative; width:30px; height:30px; animation:bdrop .5s cubic-bezier(.3,1.6,.5,1) both; animation-delay:var(--d,0ms); }
+  @keyframes bdrop{ from{ transform:translateY(-18px) scale(.3); opacity:0 } to{ transform:none; opacity:1 } }
+  .blip .disc{ position:absolute; inset:0; border-radius:50%; background:var(--c); border:2.5px solid var(--ink);
+    box-shadow:0 0 0 2px rgba(255,255,255,.9),0 3px 8px rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; font-size:14px; transition:filter .3s; }
+  .blip .ring{ position:absolute; inset:-3px; border-radius:50%; border:2px solid var(--c); opacity:0; animation:gp 2.4s ease-out infinite; }
+  .blip .num{ position:absolute; bottom:-4px; right:-4px; min-width:15px; height:15px; padding:0 3px; border-radius:8px;
+    background:var(--ink); color:var(--gold); font-weight:700; font-size:9.5px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.3); }
+  @keyframes gp{ 0%{transform:scale(.7);opacity:.7} 80%{transform:scale(1.9);opacity:0} 100%{opacity:0} }
+  .blip.done .disc{ filter:saturate(.2) brightness(.65); }
+  .blip.done .ring{ display:none; }
+  .blip.done .num{ background:var(--green); color:#04300f; border-color:rgba(255,255,255,.5); }
+  .blip.hot .ring{ animation-duration:1.2s; border-width:3px; border-color:var(--gold); }
+  .blip.hot .disc{ box-shadow:0 0 0 3px var(--gold),0 3px 12px rgba(0,0,0,.7); }
+  .me{ width:0;height:0; border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:18px solid #fff;
+    filter:drop-shadow(0 0 2px #000) drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+
+  .legpill{ font-family:var(--hud); font-weight:700; font-size:11px; letter-spacing:.3px; color:#fff;
+    background:rgba(11,14,19,.86); border:1px solid rgba(255,255,255,.18); padding:3px 8px; border-radius:20px;
+    white-space:nowrap; box-shadow:0 3px 8px rgba(0,0,0,.5); transform:translate(-50%,-50%); animation:rfade .5s ease both; }
+  .legpill b{ color:var(--gold); }
+  .routefade{ animation:rfade .6s ease both; }
+  @keyframes rfade{ from{opacity:0} to{opacity:1} }
+
+  /* ---------- bottom sheet ---------- */
+  .sheet{ position:fixed; left:0; right:0; bottom:0; height:86dvh; z-index:1200; will-change:transform;
+    background:var(--panel2); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+    border:1px solid var(--stroke); border-bottom:none; border-radius:16px 16px 0 0;
+    box-shadow:0 -16px 48px rgba(0,0,0,.6); display:flex; flex-direction:column; }
+  .shead{ flex:0 0 auto; touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; }
+  .grip{ width:42px; height:4.5px; border-radius:3px; background:rgba(255,255,255,.32); margin:9px auto 7px; }
+  .tabs{ display:flex; gap:5px; padding:0 12px 2px; overflow-x:auto; scrollbar-width:none; touch-action:pan-x; }
+  .tabs::-webkit-scrollbar{ display:none; }
+  .tab{ flex:1 0 auto; text-align:center; cursor:pointer; padding:7px 11px 6px; font-weight:700; font-size:12.5px;
+    letter-spacing:1px; text-transform:uppercase; color:var(--sub); border-radius:8px; transition:background .2s,color .2s; }
+  .tab.active{ background:var(--tabc,var(--gold)); color:var(--ink); }
+  .tprog{ display:block; height:3px; border-radius:2px; background:rgba(255,255,255,.14); margin-top:4px; overflow:hidden; }
+  .tab.active .tprog{ background:rgba(0,0,0,.3); }
+  .tprog b{ display:block; height:100%; width:0; background:var(--tabc,var(--gold)); border-radius:2px; transition:width .4s ease; }
+  .tab.active .tprog b{ background:rgba(0,0,0,.75); }
+
+  .upnext{ display:flex; align-items:center; gap:10px; padding:9px 16px 13px; cursor:pointer; min-height:58px; }
+  .upnext .ulab{ font-size:9.5px; font-weight:700; letter-spacing:2.5px; color:var(--gold); text-transform:uppercase; }
+  .upnext .uname{ font-weight:600; font-size:15.5px; line-height:1.2; margin-top:1px; }
+  .upnext .ucount{ margin-left:auto; text-align:right; flex:0 0 auto; }
+  .ucount .big{ font-size:19px; font-weight:700; color:var(--gold); line-height:1; font-variant-numeric:tabular-nums; }
+  .ucount .sm{ font-size:9px; font-weight:600; color:var(--sub); letter-spacing:1.4px; margin-top:3px; text-transform:uppercase; }
+  .ucount.late .big{ color:var(--red); }
+
+  .sbody{ flex:1; overflow-y:auto; overscroll-behavior:contain; padding:2px 14px calc(env(safe-area-inset-bottom,0px) + 26px); }
+
+  /* timeline */
+  .srow{ display:grid; grid-template-columns:50px 18px 1fr 32px; gap:7px; align-items:start; padding:9px 4px; cursor:pointer;
+    border-radius:10px; transition:background .25s,opacity .3s; }
+  .srow:active{ background:rgba(255,255,255,.05); }
+  .srow.nxt{ background:linear-gradient(90deg,rgba(245,197,24,.12),transparent 75%); }
+  .srow.done{ opacity:.42; }
+  .srow.done .snt{ text-decoration:line-through; }
+  .stime{ font-size:10px; color:var(--gold); font-weight:700; text-align:right; padding-top:3px; line-height:1.2; font-variant-numeric:tabular-nums; }
+  .scol{ position:relative; display:flex; justify-content:center; align-self:stretch; }
+  .scol::before{ content:""; position:absolute; top:-9px; bottom:-9px; width:2px; background:rgba(255,255,255,.14); }
+  .srow:first-child .scol::before{ top:10px; }
+  .srow:last-child .scol::before{ bottom:auto; height:10px; }
+  .sdot{ width:11px; height:11px; border-radius:50%; background:var(--c); border:2px solid var(--ink);
+    box-shadow:0 0 0 2px rgba(255,255,255,.6); margin-top:4px; position:relative; z-index:1; }
+  .snt{ font-size:13.5px; font-weight:600; line-height:1.2; }
+  .sgh{ font-size:10.5px; color:var(--sub); margin-top:2px; }
+  .schips{ display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; }
+  .schips:empty{ display:none; }
+  .ddl{ font-size:9.5px; font-weight:700; letter-spacing:.4px; color:#ff9a91; background:rgba(255,69,58,.13);
+    border:1px solid rgba(255,69,58,.32); padding:2px 7px; border-radius:10px; }
+  .arr2{ font-size:9.5px; font-weight:700; letter-spacing:.4px; color:#7ee29a; background:rgba(52,199,89,.12);
+    border:1px solid rgba(52,199,89,.3); padding:2px 7px; border-radius:10px; }
+  .schk{ width:27px; height:27px; margin-top:2px; border-radius:50%; border:2px solid rgba(255,255,255,.3);
+    background:transparent; color:transparent; font-size:13px; font-weight:700; cursor:pointer; display:flex;
+    align-items:center; justify-content:center; transition:all .25s; padding:0; }
+  .srow.done .schk{ background:var(--green); border-color:var(--green); color:#04300f; }
+  .nowrow{ display:flex; align-items:center; gap:9px; padding:5px 4px; }
+  .nowrow .nd{ width:9px; height:9px; border-radius:50%; background:var(--red); animation:npulse 1.6s ease-in-out infinite; }
+  @keyframes npulse{ 0%,100%{box-shadow:0 0 0 0 rgba(255,69,58,.5)} 50%{box-shadow:0 0 0 6px rgba(255,69,58,0)} }
+  .nowrow .nt{ font-size:10px; font-weight:700; letter-spacing:2px; color:var(--red); white-space:nowrap; }
+  .nowrow .nl{ flex:1; height:2px; background:linear-gradient(90deg,var(--red),transparent); border-radius:1px; }
+
+  /* ---------- card ---------- */
+  .scrim{ position:fixed; inset:0; z-index:1500; background:rgba(0,0,0,.35); opacity:0; pointer-events:none; transition:.25s; }
+  .scrim.show{ opacity:1; pointer-events:auto; }
+  .card{ position:fixed; left:50%; bottom:0; transform:translate(-50%,112%); width:min(440px,100vw); z-index:1600;
+    background:var(--panel2); backdrop-filter:blur(26px); -webkit-backdrop-filter:blur(26px); border:1px solid var(--stroke); border-bottom:none;
+    border-radius:14px 14px 0 0; box-shadow:0 -18px 50px rgba(0,0,0,.65); transition:transform .42s cubic-bezier(.22,1,.36,1);
+    overflow:hidden; max-height:86dvh; }
+  .card.show{ transform:translate(-50%,0); }
+  .cinner{ display:flex; flex-direction:column; max-height:86dvh; }
+  .cinner.sl{ animation:slin .3s ease both; }
+  .cinner.sr{ animation:srin .3s ease both; }
+  @keyframes slin{ from{opacity:0; transform:translateX(46px)} to{opacity:1; transform:none} }
+  @keyframes srin{ from{opacity:0; transform:translateX(-46px)} to{opacity:1; transform:none} }
+  .hero{ position:relative; height:128px; flex:0 0 auto; display:flex; align-items:flex-end; padding:14px 16px; overflow:hidden; }
+  .hero .grad{ position:absolute; inset:0; }
+  .hero .big{ position:absolute; right:6px; top:-14px; font-size:100px; opacity:.26; transform:rotate(-9deg); filter:drop-shadow(0 6px 10px rgba(0,0,0,.45)); }
+  .hero img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .hero::after{ content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(11,14,19,.94),transparent 70%); }
+  .hero .cat{ position:relative; z-index:2; font-weight:700; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--gold); }
+  .closeB{ position:absolute; z-index:4; top:10px; right:12px; width:30px; height:30px; border-radius:6px; background:rgba(0,0,0,.45);
+    border:1px solid rgba(255,255,255,.2); color:#fff; font-size:17px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .grip2{ position:absolute; z-index:3; top:8px; left:50%; transform:translateX(-50%); width:40px; height:4px; border-radius:3px; background:rgba(255,255,255,.35); }
+  .stamp{ position:absolute; z-index:3; top:30px; left:14px; border:3px solid var(--green); color:var(--green);
+    font-weight:700; font-size:18px; letter-spacing:3px; padding:3px 12px; border-radius:5px; transform:rotate(-11deg);
+    background:rgba(4,48,15,.35); display:none; }
+  .stamp.on{ display:block; animation:stampin .35s cubic-bezier(.3,1.7,.5,1) both; }
+  @keyframes stampin{ from{transform:rotate(-11deg) scale(2.1); opacity:0} to{transform:rotate(-11deg) scale(1); opacity:1} }
+  .cbody{ padding:13px 17px 4px; overflow-y:auto; }
+  .cbody h3{ font-family:var(--display); font-size:25px; letter-spacing:.5px; margin:0; line-height:1; }
+  .gethere{ display:flex; align-items:center; gap:7px; margin-top:9px; font-size:13px; color:#cfd6e0; }
+  .gethere .tag{ background:rgba(255,255,255,.08); border:1px solid var(--stroke); padding:3px 9px; border-radius:14px; font-weight:600; }
+  .chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:11px; }
+  .chip{ font-weight:700; font-size:12px; letter-spacing:.3px; padding:5px 10px; border-radius:6px; }
+  .chip.arr{ background:rgba(52,199,89,.16); color:#7ee29a; border:1px solid rgba(52,199,89,.35); }
+  .chip.lev{ background:rgba(255,69,58,.16); color:#ff9a91; border:1px solid rgba(255,69,58,.35); }
+  .chip.tm{ background:var(--gold); color:var(--ink); }
+  .vibe{ margin:13px 0 4px; font-size:13.5px; line-height:1.5; color:#e7ecf3; font-style:italic;
+    border-left:3px solid var(--gold); padding:2px 0 2px 11px; }
+  .cnotes{ list-style:none; margin:12px 0 10px; padding:0; }
+  .cnotes li{ position:relative; padding:5px 0 5px 20px; font-size:13.5px; color:#dde3ec; line-height:1.4; }
+  .cnotes li::before{ content:"›"; position:absolute; left:4px; top:3px; color:var(--gold); font-weight:700; }
+  .cfoot{ display:flex; gap:8px; align-items:stretch; padding:6px 14px calc(env(safe-area-inset-bottom,0px) + 14px); flex:0 0 auto; }
+  .navb{ flex:0 0 46px; border-radius:8px; border:1px solid var(--stroke); background:rgba(255,255,255,.06);
+    color:var(--txt); font-size:21px; cursor:pointer; transition:opacity .2s; }
+  .navb:disabled{ opacity:.25; cursor:default; }
+  .doneB{ flex:0 0 52px; border-radius:8px; border:2px solid var(--green); background:transparent; color:var(--green);
+    font-size:19px; font-weight:700; cursor:pointer; transition:all .2s; }
+  .doneB.on{ background:var(--green); color:#04300f; }
+  .wp{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--gold); color:var(--ink); text-decoration:none; padding:13px 6px; border-radius:8px; font-weight:700; font-size:14px;
+    letter-spacing:1.2px; text-transform:uppercase; box-shadow:0 8px 20px rgba(245,197,24,.3); white-space:nowrap; }
+  .wp:active,.navb:active,.doneB:active{ transform:scale(.96); }
+
+  @media (max-width:380px){ .hud .title{font-size:25px} .hud{max-width:60vw} }
+</style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="vignette"></div>
+  <div class="scan"></div>
+
+  <div class="wipe" id="wipe">
+    <div class="wband"></div>
+    <div class="wtext" id="wtext">FRIDAY</div>
+    <div class="wsub" id="wsub">DAY 2 · EXPLORE</div>
+  </div>
+
+  <div class="hud">
+    <div class="kbar"><span id="kbar">DAY 1 · ARRIVAL</span><span class="prog" id="hProg"></span></div>
+    <div class="title" id="hTitle">THURSDAY</div>
+    <div class="sum" id="hSum">summary</div>
+  </div>
+
+  <div class="ctl">
+    <div class="clockpill" id="clock">--:--</div>
+    <button class="gbtn locate" id="locateBtn" title="Find me">▲</button>
+  </div>
+
+  <div class="keybanner" id="keybanner" style="display:none">Estimated route lines shown</div>
+
+  <div class="sheet" id="sheet">
+    <div class="shead" id="shead">
+      <div class="grip"></div>
+      <div class="tabs" id="tabs"></div>
+      <div class="upnext" id="upnext"></div>
+    </div>
+    <div class="sbody" id="sbody"><div id="tl"></div></div>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="card" id="card">
+    <div class="cinner" id="cinner">
+      <div class="hero" id="hero">
+        <div class="grad" id="heroGrad"></div>
+        <div class="big" id="heroBig">🍴</div>
+        <img id="heroImg" alt="" style="display:none">
+        <div class="grip2"></div>
+        <div class="stamp" id="stamp">DONE ✓</div>
+        <div class="cat" id="heroCat">STOP</div>
+        <div class="closeB" id="closeB">×</div>
+      </div>
+      <div class="cbody">
+        <h3 id="cTitle">Title</h3>
+        <div class="gethere" id="cGet" style="display:none"></div>
+        <div class="chips" id="cChips"></div>
+        <div class="vibe" id="cVibe"></div>
+        <ul class="cnotes" id="cNotes"></ul>
+      </div>
+      <div class="cfoot">
+        <button class="navb" id="prevB">‹</button>
+        <button class="doneB" id="doneB" title="Mark done">✓</button>
+        <a class="wp" id="cLink" href="#" target="_blank" rel="noopener">◎ Waypoint</a>
+        <button class="navb" id="nextB">›</button>
+      </div>
+    </div>
+  </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const GOOGLE_KEY = "AIzaSyCq6BL8cOP_n7EO1jfoLL3S45I71_gXM6c";
+
+const CAT = {
+  train:{e:"🚆",g:["#4A5568","#2D3748"],l:"Transit"},
+  hotel:{e:"🏨",g:["#5A67D8","#434190"],l:"Safehouse"},
+  deli:{e:"🥪",g:["#DD6B20","#9C4221"],l:"Eat"},
+  theater:{e:"🎭",g:["#9F7AEA","#553C9A"],l:"Show"},
+  sushi:{e:"🍣",g:["#E53E3E","#9B2C2C"],l:"Eat"},
+  museum:{e:"🦖",g:["#38A169","#22543D"],l:"Museum"},
+  shop:{e:"🛍️",g:["#D53F8C","#97266D"],l:"Stroll · Shop"},
+  steak:{e:"🥩",g:["#C05621","#7B341E"],l:"Dinner"},
+  bar:{e:"🍸",g:["#805AD5","#44337A"],l:"Rooftop"},
+  pizza:{e:"🍕",g:["#E53E3E","#9B2C2C"],l:"Quick Bite"},
+  bus:{e:"🚌",g:["#3182CE","#2A4365"],l:"Shuttle"},
+  soccer:{e:"⚽",g:["#E53E3E","#742A2A"],l:"Main Event"},
+  night:{e:"🌃",g:["#6B46C1","#322659"],l:"Nightlife"},
+  brunch:{e:"🥞",g:["#DD6B20","#975A16"],l:"Brunch"},
+  market:{e:"🛒",g:["#319795","#234E52"],l:"Market"},
+  skyline:{e:"🌆",g:["#3182CE","#1A365D"],l:"Viewpoint"},
+  ferry:{e:"⛴️",g:["#00B5D8","#086F83"],l:"Ferry Dock"},
+  bridge:{e:"🌉",g:["#4299E1","#2C5282"],l:"Waterfront"},
+  obs:{e:"🏙️",g:["#667EEA","#2A4365"],l:"Observation"}
+};
+const modeIcon={walk:"🚶",transit:"🚇",drive:"🚐",ferry:"⛴️"};
+const dir = c => `https://www.google.com/maps/dir/?api=1&destination=${c[0]},${c[1]}`;
+
+const DAYS = [
+  { key:"Thu 11", name:"THURSDAY", tag:"ARRIVAL", date:"June 11", iso:"2026-06-11", color:"#FF9F40",
+    summary:"Dale arrives → Katz's → Harry Potter",
+    events:[
+      {t:"Moynihan Train Hall",time:"2:14 PM",arrive:"Train in 2:14 PM",c:[40.7506,-73.9935],cat:"train",img:"https://upload.wikimedia.org/wikipedia/commons/0/07/James_A._Farley_Building_%2851878872365%29.jpg",
+        vibe:"You step off into Moynihan's soaring skylit hall — restored Beaux-Arts steel and glass, a grand first breath of the city.",
+        notes:["Dale arrives 2:14 PM at Moynihan / Penn","Check in to Hotel 57 by 3 PM","~15 min to the hotel"]},
+      {t:"Hotel 57",time:"by 3:00 PM",arrive:"Check in by 3:00 PM",c:[40.7607,-73.9685],cat:"hotel",
+        gh:{mode:"transit",line:"E to Lex–53 St",dur:"~15 min"},
+        vibe:"Drop the bags at the Midtown base — a quick reset before the city pulls you back out.",
+        notes:["57th & Lexington","Drop bags, freshen up","Out again for Katz's"]},
+      {t:"Katz's Delicatessen",time:"3:30 PM",arrive:"Arrive 3:30 PM",leave:"Leave hotel 3:00 PM",c:[40.7223,-73.9874],cat:"deli",img:"https://upload.wikimedia.org/wikipedia/commons/b/b2/Katz%27s_Delicatessen_%2851623899326%29.jpg",
+        gh:{mode:"transit",line:"6 → F",dur:"~30 min"},
+        vibe:"The pastrami temple since 1888 — steam rising off hand-carved rye, the clatter of the counter, the famous 'I'll have what she's having' table in the corner.",
+        notes:["Leave hotel by 3:00 PM ⭐","Keep your numbered ticket — $50 lost-ticket fee","Order pastrami on rye at the carver","Back to hotel ~5 PM to freshen up"]},
+      {t:"Hotel 57 — freshen up",time:"~5:00 PM",arrive:"Back ~5:00 PM",c:[40.7607,-73.9685],cat:"hotel",
+        gh:{mode:"transit",line:"F → 6 back uptown",dur:"~30 min"},
+        vibe:"Quick reset at the base — change, recharge, then back out for the show.",
+        notes:["Return to hotel ~5:00 PM","Freshen up before Broadway","Head out again by 5:30 PM ⭐"]},
+      {t:"Harry Potter — Lyric Theatre",time:"7:00–10:00 PM",arrive:"Be seated 6:45 PM",leave:"Leave hotel 5:30 PM",c:[40.7579,-73.9876],cat:"theater",
+        gh:{mode:"transit",line:"E / M or taxi",dur:"~20 min"},
+        vibe:"Broadway's most spellbinding spectacle — stage illusions that genuinely defy belief under the Lyric's gilded ceiling.",
+        notes:["Leave hotel by 5:30 PM ⭐ — fan crowds in Times Sq","Doors 6:00 PM — arrive early","Cursed Child · 214 W 43rd St","Curtain down ~10 PM"]}
+    ]},
+  { key:"Fri 12", name:"FRIDAY", tag:"EXPLORE", date:"June 12", iso:"2026-06-12", color:"#34C759",
+    summary:"Sushi → Museum → 5th Ave → Bazaar Meat → rooftop",
+    events:[
+      {t:"Hotel 57",time:"Depart 11:10 AM",arrive:"Slow morning",c:[40.7607,-73.9685],cat:"hotel",
+        vibe:"Coffee and an easy start — today is a west-side wander, no alarms needed.",
+        notes:["Leave by 11:10 AM","Pleasant ~18-min walk to lunch"]},
+      {t:"Sozai Izakaya",time:"11:30 AM",arrive:"Arrive ~11:30 AM",leave:"Leave hotel 11:10 AM",c:[40.7594,-73.9895],cat:"sushi",
+        gh:{mode:"walk",line:"Walk via 5th Ave",dur:"~18 min"},
+        vibe:"An intimate Midtown izakaya — sizzling skewers and sashimi, an easy lunch to ease into the day.",
+        notes:["Lunch on W 45th St","Casual & quick","Leave for the museum ~1:25 PM"]},
+      {t:"Natural History Museum",time:"2:00–4:00 PM",arrive:"Arrive 2:00 PM",c:[40.7813,-73.9740],cat:"museum",img:"https://upload.wikimedia.org/wikipedia/commons/e/ec/USA-NYC-American_Museum_of_Natural_History.JPG",
+        gh:{mode:"transit",line:"B / C uptown",dur:"~25 min"},
+        vibe:"Blue whale overhead, dinosaur halls, the glowing dioramas — a cool, cavernous escape on the Upper West Side.",
+        notes:["Timed entry — exhibitions","Enter at CPW & 79th","Exit ~4 PM into Central Park"]},
+      {t:"Grand Army Plaza · 5th Ave",time:"4:00–6:00 PM",arrive:"~4:00 PM",c:[40.7644,-73.9732],cat:"shop",img:"https://upload.wikimedia.org/wikipedia/commons/8/8a/New_York_-_Perto_do_Central_Park_-_USA_-_panoramio_%28cropped%29.jpg",
+        gh:{mode:"walk",line:"Walk across Central Park",dur:"~25 min"},
+        vibe:"Stroll the park out to the Pulitzer Fountain, then window-shop down Fifth — Bergdorf's, the flagships, the Plaza on the corner.",
+        notes:["Walk across Central Park (free + scenic)","5th Ave shopping back toward hotel","Easy two hours"]},
+      {t:"Bazaar Meat by José Andrés",time:"6:45 PM",arrive:"Reservation 6:45 PM",leave:"Leave 5th Ave 6:15 PM",c:[40.7456,-73.9890],cat:"steak",
+        gh:{mode:"transit",line:"R/W from 5 Av–59 St to 28 St",dur:"~25 min"},
+        vibe:"José Andrés's theatrical carnivore showcase — wood-fired cuts and tableside flourishes in a buzzy NoMad room.",
+        notes:["Reservation 6:45 PM","$150 no-show fee ⭐","Leave 5th Ave by 6:15 PM ⭐","Smart-casual"]},
+      {t:"230 Fifth Rooftop Bar",time:"~9:00 PM",arrive:"~9:00 PM",c:[40.7441,-73.9874],cat:"bar",
+        gh:{mode:"walk",line:"Walk",dur:"~5 min"},
+        vibe:"The Empire State Building filling the skyline, heat lamps and a cocktail in hand — the classic NYC rooftop night-cap.",
+        notes:["5-min walk from dinner","Direct Empire State views","Flexible — can run late"]}
+    ]},
+  { key:"Sat 13", name:"SATURDAY", tag:"MATCH DAY", date:"June 13", iso:"2026-06-13", color:"#FF3B30",
+    summary:"Suprema lunch → Columbus Circle shuttle → Brazil v Morocco",
+    events:[
+      {t:"Hotel 57",time:"Depart 12:10 PM",arrive:"Easy morning",leave:"Leave hotel 12:10 PM",c:[40.7607,-73.9685],cat:"hotel",
+        vibe:"Sleep in, suit up in your colors — it's match day, and the whole city knows it.",
+        notes:["GRIDLOCK ALERT DAY — subway only, no taxis ⭐","42nd St is buses-only all day; Midtown jams from ~noon","Out the door by 12:10 PM ⭐"]},
+      {t:"NY Pizza Suprema",time:"12:35–1:15 PM",arrive:"Arrive ~12:35 PM",leave:"Leave by 1:15 PM",c:[40.7510,-73.9939],cat:"pizza",
+        gh:{mode:"transit",line:"E to 34 St–Penn",dur:"~25 min"},
+        vibe:"Proper slice lunch across from the Garden — fold it, savor it, fuel up for the match.",
+        notes:["Now a real 40-min lunch, not a grab & go","Right by Penn Station — expect match-day lines","Backup if the line is wild: food halls inside Penn","Out the door by 1:15 PM ⭐"]},
+      {t:"Columbus Circle — Shuttle",time:"Board 2:30–3:00 PM",arrive:"Arrive by 1:45 PM",leave:"Be at pickup 1:45 PM",c:[40.7681,-73.9819],cat:"bus",
+        gh:{mode:"transit",line:"A/C/D from 34 St–Penn",dur:"~20 min"},
+        vibe:"Midtown North staging on the park's corner — Red Line buses loading, kits and flags everywhere.",
+        notes:["NEW pickup: Columbus Circle, west of Central Park ⭐","Arrive 1:45 PM = full 45-min crowd buffer","Shuttle pass + match ticket both checked at boarding","Restrooms & coffee in Turnstyle market under the circle"]},
+      {t:"MetLife Stadium",time:"Doors 3 · KO 6 PM",arrive:"Arrive ~3:30–4 PM",c:[40.8135,-74.0745],cat:"soccer",img:"https://upload.wikimedia.org/wikipedia/commons/0/04/Metlife_stadium_%28Aerial_view%29.jpg",
+        gh:{mode:"drive",line:"FIFA shuttle · Lincoln Tunnel",dur:"35–60 min"},
+        vibe:"82,500 seats roaring — Brazil's yellow wall against Morocco's red, the Fan Village buzzing, the World Cup at full volume.",
+        notes:["Official advice: arrive 90–120 min before KO — you will ✓","Fan Village open; doors 3 PM","Brazil v Morocco — 6:00 PM KO","Match ends ~8 PM"]},
+      {t:"Times Square",time:"~10:00 PM",arrive:"~10:00 PM",c:[40.7580,-73.9855],cat:"night",img:"https://upload.wikimedia.org/wikipedia/commons/4/47/New_york_times_square-terabass.jpg",
+        gh:{mode:"drive",line:"Return shuttle",dur:"45–90 min"},
+        vibe:"Midnight neon canyon — billboards blazing, the crowd electric after the match. Swatch and M&M's open late.",
+        notes:["Expect a long post-match shuttle queue — 45–90 min","Back in Manhattan ~9:30–10 PM","Swatch & M&M stores til 12 AM"]}
+    ]},
+  { key:"Sun 14", name:"SUNDAY", tag:"BIG DAY", date:"June 14", iso:"2026-06-14", color:"#0A84FF",
+    summary:"Brunch → Chelsea → LIC → ⛴ ferry → DUMBO → Summit",
+    events:[
+      {t:"Hotel 57",time:"Depart 9:45 AM",arrive:"Alarms on!",c:[40.7607,-73.9685],cat:"hotel",
+        vibe:"The big-everything day — out early; a brunch table for seven won't hold itself.",
+        notes:["Leave by 9:45 AM ⭐","F train from Lex–63 St"]},
+      {t:"Clinton St Baking Co.",time:"10:30 AM",arrive:"Reserved 10:30 AM",leave:"Leave hotel 9:45 AM",c:[40.7213,-73.9840],cat:"brunch",
+        gh:{mode:"transit",line:"F from Lex–63 to Delancey–Essex",dur:"~40 min"},
+        vibe:"LES brunch institution — pancakes with warm maple butter, a cozy buzz, worth the early alarm.",
+        notes:["Leave hotel by 9:45 AM ⭐","Reserved for 7 at 10:30","Order the pancakes","Eat till ~12"]},
+      {t:"Chelsea Market",time:"12:30–2:30 PM",arrive:"~12:30 PM",c:[40.7424,-74.0061],cat:"market",img:"https://upload.wikimedia.org/wikipedia/commons/4/41/Chelsea_Market_%2849052085186%29.jpg",
+        gh:{mode:"transit",line:"F to 14 St",dur:"~25 min"},
+        vibe:"Brick-walled food hall in the old Nabisco factory — tacos, lobster rolls and artisan stalls under industrial pipes.",
+        notes:["Browse + late bite","~2 hrs, then subway to LIC"]},
+      {t:"Gantry Plaza State Park",time:"3:20–4:25 PM",arrive:"~3:20 PM",c:[40.7470,-73.9580],cat:"skyline",img:"https://upload.wikimedia.org/wikipedia/commons/0/0f/Gantry_Plaza_State_Park_Long_Island_City_01_%289431668991%29.jpg",
+        gh:{mode:"transit",line:"E → 7 to Vernon Blvd",dur:"~45 min"},
+        vibe:"Queens waterfront with the best straight-on Midtown skyline — old rail gantries, the Pepsi sign, benches right at the rail.",
+        notes:["Best Midtown skyline view","Relax by the water","Walk to the ferry dock by 4:25"]},
+      {t:"Hunters Point South Ferry",time:"Board 4:34 PM",arrive:"Board 4:34 PM",c:[40.7427,-73.9618],cat:"ferry",
+        gh:{mode:"walk",line:"Walk to dock",dur:"~5 min"},
+        vibe:"Step aboard the East River ferry — skyline gliding past, bridges dead ahead, salt breeze on the open deck.",
+        notes:["East River A · $4.50 (NYC Ferry app)","Board 4:34 PM → DUMBO 4:58 PM","Backup boats 3:57 / 5:00 / 5:26"]},
+      {t:"Brooklyn Bridge Park · DUMBO",time:"5:00–6:10 PM",arrive:"~5:00 PM",c:[40.7033,-73.9920],cat:"bridge",img:"https://upload.wikimedia.org/wikipedia/commons/a/af/View_of_Brooklyn_Bridge_Park_from_Manhattan_Bridge.jpg",
+        gh:{mode:"ferry",line:"NYC Ferry East River A",dur:"~24 min"},
+        vibe:"Cobblestoned DUMBO under the bridges — Pebble Beach, the famous Washington St framing of the Manhattan Bridge, Jane's Carousel glowing.",
+        notes:["Pebble Beach · Washington St photo","Fan Zone screenings live","Then Time Out Market"]},
+      {t:"Time Out Market",time:"6:10–6:50 PM",arrive:"~6:10 PM",leave:"Out by 6:40 PM",c:[40.7029,-73.9909],cat:"deli",
+        gh:{mode:"walk",line:"Walk",dur:"~5 min"},
+        vibe:"Food hall in Empire Stores — the city's best vendors under one roof, bridge views out the tall windows.",
+        notes:["Early dinner","Out of DUMBO by 6:40 PM ⭐ — protects the Summit cutoff","F from York St → Bryant Pk + 8-min walk"]},
+      {t:"SUMMIT One Vanderbilt",time:"Entry 7:30 PM",arrive:"Arrive ~7:20 PM",c:[40.7527,-73.9785],cat:"obs",img:"https://upload.wikimedia.org/wikipedia/commons/0/00/One_Vanderbilt_April_2023.jpg",
+        gh:{mode:"transit",line:"F to Bryant Pk + walk",dur:"~35 min"},
+        vibe:"Mirror-walled glass rooms 1,000 ft up, the Ascent elevator, the whole city ablaze as the sun drops at 8:27.",
+        notes:["Timed entry + Ascent — arrive ~7:20","Hard cutoff 7:50 PM ⭐","Sunset 8:27 PM from the top"]}
+    ]},
+  { key:"Mon 15", name:"MONDAY", tag:"DEPARTURE", date:"June 15", iso:"2026-06-15", color:"#BF5AF2",
+    summary:"Flexible morning → train to BWI",
+    events:[
+      {t:"Hotel 57",time:"Flexible AM",arrive:"Flexible morning",c:[40.7607,-73.9685],cat:"hotel",
+        vibe:"A slow last morning — coffee, pack, one final Midtown wander.",
+        notes:["Pack up, bags ready by 1:00 PM","Leave 1:15 PM — buffer for traffic"]},
+      {t:"Moynihan Train Hall",time:"Depart 3:05 PM",arrive:"Be there by 2:00 PM",leave:"Leave hotel 1:15 PM",c:[40.7506,-73.9935],cat:"train",img:"https://upload.wikimedia.org/wikipedia/commons/0/07/James_A._Farley_Building_%2851878872365%29.jpg",
+        gh:{mode:"transit",line:"Taxi with luggage (E train backup)",dur:"~20 min"},
+        vibe:"Back under the great skylight to catch the train south — last look at the city.",
+        notes:["Leave hotel 1:15 PM with bags","Be at the station by 2:00 PM ⭐","Train departs 3:05 PM → BWI Marshall"]}
+    ]}
+];
+
+/* ============ time (supports ?now=2026-06-11T15:00 for testing) ============ */
+const FAKE_NOW = new URLSearchParams(location.search).get('now');
+const NOW = () => FAKE_NOW ? new Date(FAKE_NOW) : new Date();
+function parseTimeStr(s, iso){
+  if(!s) return null;
+  const m = String(s).match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+  if(!m) return null;
+  let h = (+m[1]) % 12; if(/pm/i.test(m[3])) h += 12;
+  const d = new Date(iso + 'T00:00:00');
+  d.setHours(h, m[2] ? +m[2] : 0, 0, 0);
+  return d;
+}
+const evWhen   = (day,ev) => parseTimeStr(ev.time,day.iso) || parseTimeStr(ev.arrive,day.iso);
+const evLeave  = (day,ev) => parseTimeStr(ev.leave,day.iso);
+function fmtClock(d){ let h=d.getHours(), m=d.getMinutes(); const ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+String(m).padStart(2,'0')+' '+ap; }
+function fmtCount(ms){
+  const m = Math.max(0, Math.ceil(ms/60000));
+  if(m < 60) return m + ' MIN';
+  return Math.floor(m/60) + 'H ' + (m%60) + 'M';
+}
+function todayIdx(){
+  const n = NOW();
+  const ds = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+  return DAYS.findIndex(d => d.iso === ds);
+}
+
+/* ============ done-state (persisted) ============ */
+let doneMap = {};
+try{ doneMap = JSON.parse(localStorage.getItem('nyctrip-done')||'{}'); }catch(e){}
+const isDone = (d,i) => !!doneMap[d+'-'+i];
+function setDone(d,i,v){
+  if(v) doneMap[d+'-'+i]=1; else delete doneMap[d+'-'+i];
+  try{ localStorage.setItem('nyctrip-done', JSON.stringify(doneMap)); }catch(e){}
+}
+
+/* ============ map ============ */
+const map = L.map('map',{zoomControl:false,attributionControl:false}).setView([40.74,-73.97],12);
+L.control.attribution({position:'bottomright',prefix:false}).addAttribution('© OpenStreetMap · CARTO').addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20}).addTo(map);
+let layer = L.layerGroup().addTo(map);
+let current = 0, routeToken = 0, gReady = false, gDS = null, cardIdx = null, markers = [];
+
+const FERRY_PATH=[[40.7427,-73.9618],[40.7360,-73.9605],[40.7270,-73.9618],[40.7180,-73.9705],[40.7095,-73.9840],[40.7033,-73.9920]];
+
+function blipIcon(color,emoji,n,delay,dn,hot){
+  const num = dn ? '✓' : n;
+  return L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],
+    html:`<div class="blip${dn?' done':''}${hot?' hot':''}" style="--c:${color};--d:${delay}ms"><div class="ring"></div><div class="disc">${emoji}</div><div class="num">${num}</div></div>`});
+}
+function legPill(latlng,html){
+  L.marker(latlng,{interactive:false,icon:L.divIcon({className:'',iconSize:[0,0],html:`<div class="legpill">${html}</div>`})}).addTo(layer);
+}
+function drawPath(path,color,dash){
+  if(!path||path.length<2)return;
+  L.polyline(path,{color:"#0b0e13",weight:8,opacity:.85,lineCap:"round",className:'routefade'}).addTo(layer);
+  L.polyline(path,{color:color,weight:4.5,opacity:.95,lineCap:"round",dashArray:dash,className:'routefade'}).addTo(layer);
+}
+function arc(a,b){
+  const mlat=(a[0]+b[0])/2 + (b[1]-a[1])*0.10, mlng=(a[1]+b[1])/2 - (b[0]-a[0])*0.10;
+  return [a,[mlat,mlng],b];
+}
+function depDate(day,ev){
+  const d = evWhen(day,ev) || new Date(day.iso+"T12:00:00");
+  return d < new Date() ? new Date(Date.now()+60000) : d;
+}
+function styleFor(mode,gh,leg){
+  let col=DAYS[current].color, dash=null, ic=modeIcon[gh.mode]||"🚇", label=leg?leg.duration.text:(gh.dur||"");
+  if(mode==="WALKING"){ dash="2,9"; ic="🚶"; }
+  else if(mode==="DRIVING"){ ic="🚐"; }
+  else if(mode==="TRANSIT" && leg){
+    const ts=(leg.steps||[]).find(s=>s.travel_mode==="TRANSIT");
+    if(ts && ts.transit && ts.transit.line){
+      const line=ts.transit.line;
+      if(line.color) col=line.color;
+      const ln=line.short_name||line.name||"";
+      label=(ln?ln+" · ":"")+leg.duration.text;
+      const vt=(line.vehicle&&line.vehicle.type)||"";
+      ic=/SUBWAY|METRO|TRAM|HEAVY_RAIL/i.test(vt)?"🚇":"🚆";
+    }
+  }
+  return {col:col,dash:dash,ic:ic,label:label};
+}
+function drawEstimate(a,b,gh,color){
+  const walk=gh.mode==="walk", drive=gh.mode==="drive";
+  const col = walk?"#9aa6b4" : drive?"#FF6A3D" : color;
+  const dash = walk?"1,10" : drive?null : "11,8";
+  const path = walk?[a.c,b.c]:arc(a.c,b.c);
+  drawPath(path,col,dash);
+  legPill(path[Math.floor(path.length/2)], `${modeIcon[gh.mode]||"🚇"} ${gh.line?gh.line+' · ':''}<b>${gh.dur||''}</b>`);
+}
+function drawFerry(gh){
+  drawPath(FERRY_PATH,"#22d3ee","1,10");
+  legPill(FERRY_PATH[Math.floor(FERRY_PATH.length/2)], `⛴️ ${gh.line||'Ferry'} · <b>${gh.dur||''}</b>`);
+}
+function routeGoogle(a,b,gh,token){
+  const mode = gh.mode==="walk"?"WALKING":gh.mode==="drive"?"DRIVING":"TRANSIT";
+  const req={origin:{lat:a.c[0],lng:a.c[1]},destination:{lat:b.c[0],lng:b.c[1]},travelMode:google.maps.TravelMode[mode]};
+  if(mode==="TRANSIT") req.transitOptions={departureTime:depDate(DAYS[current],b)};
+  let done=false;
+  const fallback=function(){ if(done||token!==routeToken)return; done=true; drawEstimate(a,b,gh,DAYS[current].color); };
+  setTimeout(fallback,4500);
+  try{
+    gDS.route(req,function(res,status){
+      if(token!==routeToken||done) return;
+      if(status==="OK" && res.routes[0]){
+        done=true;
+        const path=res.routes[0].overview_path.map(function(p){return [p.lat(),p.lng()];});
+        const st=styleFor(mode,gh,res.routes[0].legs[0]);
+        drawPath(path,st.col,st.dash);
+        legPill(path[Math.floor(path.length/2)], st.ic+" "+st.label);
+      } else { fallback(); }
+    });
+  }catch(e){ fallback(); }
+}
+function drawRoutes(day,token){
+  for(let k=1;k<day.events.length;k++){
+    const a=day.events[k-1], b=day.events[k], gh=b.gh||{mode:"walk"};
+    if(gh.mode==="ferry"){ drawFerry(gh); continue; }
+    if(gReady && gDS){ routeGoogle(a,b,gh,token); }
+    else { drawEstimate(a,b,gh,day.color); }
+  }
+}
+
+/* ============ up-next ============ */
+function nextInfo(){
+  if(todayIdx() !== current) return null;
+  const day = DAYS[current], now = NOW();
+  for(let i=0;i<day.events.length;i++){
+    if(isDone(current,i)) continue;
+    const ev = day.events[i], lv = evLeave(day,ev), wh = evWhen(day,ev);
+    if(lv && now < lv) return {ev:ev, idx:i, when:lv, label:'LEAVE'};
+    if(wh && now < wh) return {ev:ev, idx:i, when:wh, label:lv?'ARRIVE':'NEXT'};
+  }
+  return false;
+}
+function updateUpNext(){
+  const u = document.getElementById('upnext');
+  const day = DAYS[current];
+  const ni = nextInfo();
+  if(ni === null){
+    u.innerHTML = `<div><div class="ulab" style="color:${day.color}">${day.tag}</div><div class="uname">${day.date} · ${day.events.length} stops</div></div>
+      <div class="ucount"><div class="sm">tap for full plan ↑</div></div>`;
+    u.onclick = () => applySnap(snap===2?1:2);
+  } else if(ni === false){
+    u.innerHTML = `<div><div class="ulab" style="color:var(--green)">DAY COMPLETE</div><div class="uname">That's a wrap 🏁</div></div>`;
+    u.onclick = null;
+  } else {
+    const ms = ni.when - NOW();
+    const urgent = ms < 15*60000;
+    u.innerHTML = `<div><div class="ulab">▲ UP NEXT</div><div class="uname">${ni.ev.t}</div></div>
+      <div class="ucount${urgent?' late':''}"><div class="big">${fmtCount(ms)}</div><div class="sm">${ni.label} · ${fmtClock(ni.when)}</div></div>`;
+    u.onclick = () => openCard(ni.idx);
+  }
+}
+
+/* ============ timeline ============ */
+function nowRow(){
+  const d = document.createElement('div'); d.className='nowrow';
+  d.innerHTML = `<span class="nd"></span><span class="nt">NOW · ${fmtClock(NOW())}</span><span class="nl"></span>`;
+  return d;
+}
+function buildTimeline(i){
+  const day = DAYS[i];
+  const rows = document.getElementById('tl'); rows.innerHTML='';
+  const now = NOW(), isToday = todayIdx() === i, ni = nextInfo();
+  let placed = false;
+  day.events.forEach((ev,idx)=>{
+    if(isToday && !placed){
+      const wh = evWhen(day,ev);
+      if(wh && wh > now){ rows.appendChild(nowRow()); placed = true; }
+    }
+    const r = document.createElement('div');
+    r.className = 'srow' + (isDone(i,idx)?' done':'') + ((ni && ni.idx===idx)?' nxt':'');
+    const gh = ev.gh ? `<div class="sgh">${modeIcon[ev.gh.mode]||''} ${ev.gh.line||''} · ${ev.gh.dur||''}</div>` : '';
+    const lv = ev.leave ? `<span class="ddl">⏰ ${ev.leave}</span>` : '';
+    const ar = ev.arrive ? `<span class="arr2">${ev.arrive}</span>` : '';
+    r.innerHTML = `<div class="stime">${ev.time||''}</div><div class="scol"><div class="sdot" style="--c:${day.color}"></div></div>
+      <div><div class="snt">${ev.t}</div>${gh}<div class="schips">${lv}${ar}</div></div>
+      <button class="schk" aria-label="mark done">✓</button>`;
+    r.onclick = () => openCard(idx);
+    r.querySelector('.schk').onclick = (e)=>{
+      e.stopPropagation();
+      setDone(i,idx,!isDone(i,idx));
+      buildTimeline(i); refreshProgress(); paintMarkers(); updateUpNext();
+    };
+    rows.appendChild(r);
+  });
+  if(isToday && !placed) rows.appendChild(nowRow());
+}
+function paintMarkers(){
+  const ni = nextInfo();
+  markers.forEach((m,idx)=>{
+    const el = m.getElement(); if(!el) return;
+    const b = el.querySelector('.blip'); if(!b) return;
+    b.classList.toggle('done', isDone(current,idx));
+    b.classList.toggle('hot', !!(ni && ni.idx===idx));
+    const num = b.querySelector('.num'); if(num) num.textContent = isDone(current,idx) ? '✓' : (idx+1);
+  });
+}
+
+/* ============ tabs + progress ============ */
+const tabsEl = document.getElementById('tabs');
+DAYS.forEach((d,i)=>{
+  const el = document.createElement('div'); el.className='tab'; el.style.setProperty('--tabc',d.color);
+  el.innerHTML = `<span>${d.key}</span><i class="tprog"><b></b></i>`;
+  el.onclick = (e)=>{ e.stopPropagation(); closeCard(); if(i!==current) doWipe(i); };
+  tabsEl.appendChild(el);
+});
+function refreshProgress(){
+  DAYS.forEach((d,i)=>{
+    const c = d.events.filter((_,j)=>isDone(i,j)).length;
+    tabsEl.children[i].querySelector('.tprog b').style.width = (c/d.events.length*100)+'%';
+  });
+  const day = DAYS[current], c = day.events.filter((_,j)=>isDone(current,j)).length;
+  document.getElementById('hProg').textContent = c ? c+'/'+day.events.length+' ✓' : '';
+}
+
+/* ============ day render + wipe ============ */
+function renderDay(i){
+  current = i; layer.clearLayers(); markers = [];
+  const day = DAYS[i];
+  const token = ++routeToken;
+  const ni0 = nextInfo();
+  day.events.forEach((ev,idx)=>{
+    const m = L.marker(ev.c,{icon:blipIcon(day.color,CAT[ev.cat].e,idx+1,idx*70,isDone(i,idx),false)})
+      .addTo(layer).on('click',()=>openCard(idx));
+    markers.push(m);
+  });
+  setTimeout(()=>{ if(token===routeToken) drawRoutes(day,token); }, 380);
+  map.fitBounds(L.latLngBounds(day.events.map(e=>e.c)).pad(0.18),{paddingTopLeft:[30,130],paddingBottomRight:[30,200]});
+  document.getElementById('kbar').textContent = `DAY ${i+1} · ${day.tag}`;
+  document.getElementById('hTitle').textContent = day.name;
+  document.getElementById('hSum').textContent = day.summary;
+  document.querySelector('.hud').style.borderLeftColor = day.color;
+  Array.from(tabsEl.children).forEach((el,n)=> el.classList.toggle('active', n===i));
+  buildTimeline(i); paintMarkers(); updateUpNext(); refreshProgress();
+}
+const wipe = document.getElementById('wipe');
+function doWipe(i){
+  document.getElementById('wtext').textContent = DAYS[i].name;
+  document.getElementById('wsub').textContent = 'DAY '+(i+1)+' · '+DAYS[i].tag;
+  wipe.style.setProperty('--wc', DAYS[i].color);
+  wipe.classList.remove('run'); void wipe.offsetWidth; wipe.classList.add('run');
+  setTimeout(()=>renderDay(i), 330);
+  setTimeout(()=>wipe.classList.remove('run'), 1000);
+}
+
+/* ============ bottom sheet drag ============ */
+const sheet = document.getElementById('sheet'), shead = document.getElementById('shead'), sbody = document.getElementById('sbody');
+let snap = 1, sd = null;
+function visFor(s){
+  const H = sheet.getBoundingClientRect().height, vh = window.innerHeight;
+  if(s===0) return Math.min(H, shead.offsetHeight + 6);
+  if(s===1) return Math.min(H, vh*0.52);
+  return H;
+}
+function applySnap(s, anim){
+  snap = s;
+  sheet.style.transition = anim===false ? 'none' : 'transform .42s cubic-bezier(.22,1,.36,1)';
+  sheet.style.transform = 'translateY('+Math.max(0, sheet.getBoundingClientRect().height - visFor(s))+'px)';
+}
+shead.addEventListener('pointerdown', e=>{
+  sd = {y0:e.clientY, vis0:visFor(snap), vis:visFor(snap), t0:Date.now(), moved:false, tEl:e.target};
+  try{ shead.setPointerCapture(e.pointerId); }catch(err){}
+  sheet.style.transition='none';
+});
+shead.addEventListener('pointermove', e=>{
+  if(!sd) return;
+  const dy = e.clientY - sd.y0;
+  if(Math.abs(dy) > 7) sd.moved = true;
+  if(!sd.moved) return;
+  const H = sheet.getBoundingClientRect().height;
+  sd.vis = Math.min(visFor(2), Math.max(visFor(0)-26, sd.vis0 - dy));
+  sheet.style.transform = 'translateY('+(H - sd.vis)+'px)';
+});
+function sheetRelease(e){
+  if(!sd) return;
+  const wasTap = !sd.moved, vis = sd.vis, v = (sd.vis - sd.vis0)/Math.max(1, Date.now()-sd.t0);
+  const target = (()=>{
+    if(wasTap) return snap;
+    if(v >  0.5) return Math.min(2, snap+1);
+    if(v < -0.5) return Math.max(0, snap-1);
+    let best = 0, bd = 1e9;
+    [0,1,2].forEach(s=>{ const d = Math.abs(visFor(s)-vis); if(d<bd){ bd=d; best=s; } });
+    return best;
+  })();
+  /* pointer capture retargets events to shead, so use the element recorded at pointerdown */
+  const tEl = sd.tEl;
+  sd = null;
+  if(wasTap){
+    const tab = tEl && tEl.closest && tEl.closest('.tab');
+    if(tab){
+      applySnap(snap);
+      const i = Array.prototype.indexOf.call(tabsEl.children, tab);
+      closeCard();
+      if(i > -1 && i !== current) doWipe(i);
+      return;
+    }
+    const un = tEl && tEl.closest && tEl.closest('.upnext');
+    if(un){
+      applySnap(snap);
+      const u = document.getElementById('upnext');
+      if(u.onclick) u.onclick();
+      return;
+    }
+    applySnap(snap===0 ? 1 : 0);
+    return;
+  }
+  applySnap(target);
+}
+shead.addEventListener('pointerup', sheetRelease);
+shead.addEventListener('pointercancel', e=>{ if(sd){ sd=null; applySnap(snap); } });
+window.addEventListener('resize', ()=>applySnap(snap,false));
+
+/* ============ card ============ */
+const card = document.getElementById('card'), scrim = document.getElementById('scrim'), cinner = document.getElementById('cinner');
+function openCard(idx, slide){
+  cardIdx = idx;
+  const ev = DAYS[current].events[idx], cat = CAT[ev.cat];
+  cinner.classList.remove('sl','sr');
+  if(slide){ void cinner.offsetWidth; cinner.classList.add(slide); }
+  document.getElementById('heroGrad').style.background = `linear-gradient(135deg, ${cat.g[0]}, ${cat.g[1]})`;
+  document.getElementById('heroBig').textContent = cat.e;
+  document.getElementById('heroCat').textContent = `STOP ${idx+1} · ` + cat.l;
+  const img = document.getElementById('heroImg');
+  if(ev.img){ img.src = ev.img; img.style.display='block'; img.onerror = ()=>img.style.display='none'; }
+  else img.style.display='none';
+  document.getElementById('cTitle').textContent = ev.t;
+  const get = document.getElementById('cGet');
+  if(ev.gh){ get.style.display='flex'; get.innerHTML = `<span>${modeIcon[ev.gh.mode]||'🚇'}</span><span class="tag">${ev.gh.line}</span><span>${ev.gh.dur}</span>`; }
+  else get.style.display='none';
+  const chips = document.getElementById('cChips'); chips.innerHTML='';
+  const add = (cls,txt)=>{ if(!txt)return; const s=document.createElement('span'); s.className='chip '+cls; s.textContent=txt; chips.appendChild(s); };
+  add('tm',ev.time); add('arr',ev.arrive); add('lev',ev.leave);
+  const tm = chips.querySelector('.chip.tm'); if(tm) tm.style.background = DAYS[current].color;
+  document.getElementById('cVibe').textContent = ev.vibe||'';
+  const ul = document.getElementById('cNotes'); ul.innerHTML='';
+  (ev.notes||[]).forEach(n=>{ const li=document.createElement('li'); li.textContent=n; ul.appendChild(li); });
+  document.getElementById('cLink').href = dir(ev.c);
+  document.getElementById('prevB').disabled = idx===0;
+  document.getElementById('nextB').disabled = idx===DAYS[current].events.length-1;
+  syncDoneUI(false);
+  scrim.classList.add('show'); card.classList.add('show');
+  const p = map.project(ev.c, map.getZoom()); p.y += 140;
+  map.panTo(map.unproject(p, map.getZoom()), {animate:true, duration:.5});
+}
+function syncDoneUI(animate){
+  const on = cardIdx!=null && isDone(current,cardIdx);
+  const st = document.getElementById('stamp');
+  st.classList.remove('on'); if(on){ if(animate) void st.offsetWidth; st.classList.add('on'); }
+  if(!animate && !on) st.classList.remove('on');
+  document.getElementById('doneB').classList.toggle('on', on);
+}
+function closeCard(){ scrim.classList.remove('show'); card.classList.remove('show'); cardIdx=null; }
+document.getElementById('closeB').onclick = closeCard;
+scrim.onclick = closeCard;
+map.on('click', closeCard);
+function nav(d){
+  if(cardIdx==null) return;
+  const n = cardIdx + d;
+  if(n<0 || n>=DAYS[current].events.length) return;
+  openCard(n, d>0 ? 'sl' : 'sr');
+}
+document.getElementById('prevB').onclick = ()=>nav(-1);
+document.getElementById('nextB').onclick = ()=>nav(1);
+document.getElementById('doneB').onclick = ()=>{
+  if(cardIdx==null) return;
+  setDone(current,cardIdx,!isDone(current,cardIdx));
+  syncDoneUI(true); buildTimeline(current); refreshProgress(); paintMarkers(); updateUpNext();
+};
+/* swipe: horizontal = prev/next, downward from hero = dismiss */
+let cts = null;
+card.addEventListener('touchstart', e=>{
+  cts = {x:e.touches[0].clientX, y:e.touches[0].clientY, hero:!!(e.target.closest && e.target.closest('.hero'))};
+},{passive:true});
+card.addEventListener('touchend', e=>{
+  if(!cts) return;
+  const dx = e.changedTouches[0].clientX - cts.x, dy = e.changedTouches[0].clientY - cts.y;
+  if(Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy)*1.4) nav(dx<0 ? 1 : -1);
+  else if(cts.hero && dy > 80 && Math.abs(dx) < 60) closeCard();
+  cts = null;
+},{passive:true});
+
+/* ============ locate ============ */
+let meMarker = null;
+document.getElementById('locateBtn').onclick = ()=>{
+  if(!navigator.geolocation){ alert('Location not available.'); return; }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const ll = [pos.coords.latitude, pos.coords.longitude];
+    if(meMarker) meMarker.setLatLng(ll);
+    else meMarker = L.marker(ll,{icon:L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,12],html:'<div class="me"></div>'})}).addTo(map);
+    map.flyTo(ll, 15, {duration:.8});
+  },()=>alert('Could not get your location. Allow access and retry.'),{enableHighAccuracy:true,timeout:8000});
+};
+
+/* ============ live tick + boot ============ */
+function tick(){
+  document.getElementById('clock').textContent = fmtClock(NOW());
+  updateUpNext();
+  if(todayIdx() === current){ buildTimeline(current); paintMarkers(); }
+}
+function banner(t){ const b=document.getElementById('keybanner'); b.style.display='block'; b.textContent=t; }
+window.__gmReady = function(){ gReady=true; gDS=new google.maps.DirectionsService(); renderDay(current); };
+function boot(){
+  const ti = todayIdx();
+  const start = ti >= 0 ? ti : 0;
+  renderDay(start);
+  applySnap(1, false);
+  doWipe(start); /* title-card intro */
+  tick();
+  setInterval(tick, 30000);
+  if(GOOGLE_KEY){
+    const s = document.createElement('script');
+    s.src = "https://maps.googleapis.com/maps/api/js?key="+GOOGLE_KEY+"&libraries=geometry&callback=__gmReady";
+    s.async = true; s.onerror = function(){ banner('Google key error — estimated routes shown'); };
+    document.head.appendChild(s);
+  }
+}
+boot();
+</script>
+</body>
+</html>
